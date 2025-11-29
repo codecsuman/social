@@ -6,52 +6,65 @@ import connectDB from "./utils/db.js";
 import userRoute from "./routes/user.route.js";
 import postRoute from "./routes/post.route.js";
 import messageRoute from "./routes/message.route.js";
-import { app, server } from "./socket/socket.js";
-import path from "path";
-import fs from "fs";
+import { createServer } from "http";
+import { initSocket } from "./socket/socket.js";
 
 dotenv.config();
 
-const PORT = process.env.PORT || 3000;
-const __dirname = path.resolve();
+const app = express();
+const server = createServer(app);
 
-// ----- Middlewares -----
-app.use(express.json());
-app.use(cookieParser());
+// 🚀 PORT
+const PORT = process.env.PORT || 5000;
+
+// 🚀 Allowed Origins (Local + Vercel + Render)
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  process.env.CLIENT_URL, // your Vercel frontend URL
+  process.env.RENDER_EXTERNAL_URL // optional: Render domain
+].filter(Boolean);
+
+// 🚀 Important for cookies on Render
+app.set("trust proxy", 1);
+
+// 🚀 Middleware
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
-// ✅ CORS FIX (works on Render + localhost)
-const corsOptions = {
-    origin: true,
+app.use(
+  cors({
+    origin: allowedOrigins,
     credentials: true,
-};
+    methods: ["GET", "POST", "PUT", "DELETE"],
+  })
+);
 
-app.use(cors(corsOptions));
-
-// ----- API ROUTES -----
+// 🚀 Routes
 app.use("/api/v1/user", userRoute);
 app.use("/api/v1/post", postRoute);
 app.use("/api/v1/message", messageRoute);
 
-// ----- FRONTEND SERVING (SAFE MODE) -----
-const frontendPath = path.join(__dirname, "frontend", "dist");
-
-if (fs.existsSync(frontendPath)) {
-
-    console.log("✅ Frontend build found, serving UI");
-
-    app.use(express.static(frontendPath));
-
-    app.get("*", (req, res) => {
-        res.sendFile(path.join(frontendPath, "index.html"));
-    });
-
-} else {
-    console.warn("⚠️ Frontend build not found, only API is running");
-}
-
-// ----- SERVER START -----
-server.listen(PORT, async () => {
-    await connectDB();
-    console.log(`✅ Server running at port ${PORT}`);
+// 🚀 Health Check
+app.get("/", (req, res) => {
+  res.send("Backend is Live ✅");
 });
+
+// 🚀 Init Socket.io (WITH CORS)
+initSocket(server, allowedOrigins);
+
+// 🚀 Start Server After DB Connected
+const startServer = async () => {
+  try {
+    await connectDB();
+    server.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("❌ Failed to start server:", error.message);
+    process.exit(1);
+  }
+};
+
+startServer();

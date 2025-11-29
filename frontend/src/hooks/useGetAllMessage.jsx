@@ -1,24 +1,36 @@
-import { setMessages } from "@/redux/chatSlice";
-import { setPosts } from "@/redux/postSlice";
-import axios from "axios";
-import { useEffect } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useEffect } from "react"
+import { useDispatch } from "react-redux"
+import { setMessages } from "../redux/chatSlice"
+import api from "../lib/api"
 
-const useGetAllMessage = () => {
-    const dispatch = useDispatch();
-    const {selectedUser} = useSelector(store=>store.auth);
-    useEffect(() => {
-        const fetchAllMessage = async () => {
-            try {
-                const res = await axios.get(`https://instaclone-g9h5.onrender.com/api/v1/message/all/${selectedUser?._id}`, { withCredentials: true });
-                if (res.data.success) {  
-                    dispatch(setMessages(res.data.messages));
-                }
-            } catch (error) {
-                console.log(error);
-            }
+const useGetAllMessage = (userId) => {
+  const dispatch = useDispatch()
+
+  useEffect(() => {
+    if (!userId) return   // ✅ guard lives inside hook
+
+    const controller = new AbortController()
+
+    const fetchMessages = async () => {
+      try {
+        const res = await api.get(`/api/v1/message/${userId}`, {
+          signal: controller.signal,
+        })
+
+        if (res.data?.success) {
+          dispatch(setMessages(res.data.messages || []))
         }
-        fetchAllMessage();
-    }, [selectedUser]);
-};
-export default useGetAllMessage;
+      } catch (error) {
+        if (error.name !== "CanceledError") {
+          console.error("Message fetch error:", error?.response?.data || error.message)
+        }
+      }
+    }
+
+    fetchMessages()
+    return () => controller.abort()
+
+  }, [dispatch, userId])
+}
+
+export default useGetAllMessage

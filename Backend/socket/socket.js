@@ -1,36 +1,57 @@
-import {Server} from "socket.io";
-import express from "express";
-import http from "http";
+// Backend/socket/socket.js
+import { Server } from "socket.io";
 
-const app = express();
+let io = null;
+const userSocketMap = {}; // userId -> socketId
 
-const server = http.createServer(app);
+export const initSocket = (server, allowedOrigins) => {
 
-const io = new Server(server, {
-    cors:{
-        origin:process.env.URL,
-        methods:['GET','POST']
+  const origin =
+    process.env.NODE_ENV === "production"
+      ? allowedOrigins[0] // In production allow ONLY your Vercel frontend
+      : allowedOrigins;   // In dev allow array
+
+  io = new Server(server, {
+    cors: {
+      origin,
+      credentials: true,
+    },
+    transports: ["websocket", "polling"], // important for vercel
+    pingTimeout: 60000,
+  });
+
+  io.on("connection", (socket) => {
+    console.log("⚡ Socket Connected:", socket.id);
+
+    let userId = socket.handshake.query.userId;
+
+    // Fix: prevent "undefined" userId strings
+    if (!userId || userId === "undefined" || userId === "null") {
+      console.log("⚠️ Invalid userId sent to socket");
+      return;
     }
-})
 
-const userSocketMap = {} ; // this map stores socket id corresponding the user id; userId -> socketId
+    userSocketMap[userId] = socket.id;
+
+    // Send online users list
+    io.emit("getOnlineUsers", Object.keys(userSocketMap));
+
+    socket.on("disconnect", () => {
+      console.log("❌ Socket Disconnected:", socket.id);
+
+      if (userId) delete userSocketMap[userId];
+
+      io.emit("getOnlineUsers", Object.keys(userSocketMap));
+    });
+  });
+};
 
 export const getReceiverSocketId = (receiverId) => userSocketMap[receiverId];
 
-io.on('connection', (socket)=>{
-    const userId = socket.handshake.query.userId;
-    if(userId){
-        userSocketMap[userId] = socket.id;
-    }
-
-    io.emit('getOnlineUsers', Object.keys(userSocketMap));
-
-    socket.on('disconnect',()=>{
-        if(userId){
-            delete userSocketMap[userId];
-        }
-        io.emit('getOnlineUsers', Object.keys(userSocketMap));
-    });
-})
-
-export {app, server, io};
+export const getIO = () => {
+  if (!io) {
+    console.error("⚠️ Socket.io not initialized!");
+    return null;
+  }
+  return io;
+};
